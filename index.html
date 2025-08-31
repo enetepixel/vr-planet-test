@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>VR Planet Test</title>
+    <title>VR Planeten Explosions-Spiel</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { 
@@ -22,23 +22,34 @@
             left: 10px; 
             color: white; 
             z-index: 100; 
-            background: rgba(0,0,0,0.8); 
+            background: rgba(0,0,0,0.9); 
             padding: 15px; 
-            border-radius: 5px; 
-            max-width: 300px;
+            border-radius: 10px; 
+            max-width: 350px;
+            box-shadow: 0 0 20px rgba(255,255,255,0.1);
         }
         button { 
             margin: 5px; 
-            padding: 10px 15px; 
-            background: #4CAF50; 
+            padding: 12px 20px; 
+            background: linear-gradient(45deg, #4CAF50, #45a049); 
             color: white; 
             border: none; 
-            border-radius: 3px; 
+            border-radius: 25px; 
             cursor: pointer; 
             font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
         }
         button:hover { 
-            background: #45a049; 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+        }
+        button.danger {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+        }
+        button.special {
+            background: linear-gradient(45deg, #667eea, #764ba2);
         }
         #canvas {
             display: block;
@@ -46,61 +57,95 @@
             height: 100%;
         }
         .status {
-            margin: 10px 0;
-            padding: 5px;
+            margin: 8px 0;
+            padding: 8px;
             background: rgba(255,255,255,0.1);
-            border-radius: 3px;
+            border-radius: 5px;
             font-size: 12px;
+            border-left: 3px solid #4CAF50;
+        }
+        .title {
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            margin-bottom: 15px;
+        }
+        .controls {
+            font-size: 11px;
+            color: #ccc;
+            margin-top: 10px;
+            line-height: 1.4;
         }
     </style>
 </head>
 <body>
     <div id="container">
         <div id="ui">
-            <h3>🚀 VR Planeten Test</h3>
+            <h2 class="title">🌟 VR Planeten Explosions-Spiel 💥</h2>
+            
             <div class="status">
                 Status: <span id="loadStatus">Lade...</span>
             </div>
             <div class="status">
                 WebXR: <span id="vrStatus">Prüfe...</span>
             </div>
-            <button onclick="resetPlanets()">🔄 Reset</button>
-            <button onclick="enterVR()" id="vrButton" style="display:none;">🥽 VR Starten</button>
-            <div style="margin-top:10px; font-size:11px; color:#ccc;">
-                Desktop: Maus zum Drehen der Kamera<br>
-                VR: Controller zum Greifen
+            <div class="status">
+                Score: <span id="score">0</span> Punkte
+            </div>
+            
+            <button onclick="resetSystem()">🔄 Reset System</button>
+            <button onclick="addBlackHole()" class="danger">🕳️ Schwarzes Loch</button>
+            <button onclick="addAsteroidField()" class="special">☄️ Asteroiden</button>
+            <button onclick="createSuperNova()" class="danger">💥 Supernova</button>
+            <button onclick="toggleTimeScale()" class="special">⏰ Zeitlupe</button>
+            
+            <div class="controls">
+                <strong>VR Steuerung:</strong><br>
+                • Trigger = Planet greifen & bewegen<br>
+                • Planeten zusammenstoßen = Explosion!<br>
+                • Schwarze Löcher ziehen Planeten an<br>
+                • Asteroiden können zerstört werden
             </div>
         </div>
         <canvas id="canvas"></canvas>
     </div>
 
     <script type="module">
-        // Three.js VR Planet System
+        // Three.js VR Explosions System
         import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
         import { VRButton } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/webxr/VRButton.js';
 
         let scene, camera, renderer;
-        let planets = [];
+        let planets = [], asteroids = [], blackHoles = [], particles = [];
         let sun;
-        let raycaster, mouse;
         let selectedPlanet = null;
         let vrSupported = false;
+        let score = 0;
+        let timeScale = 1.0;
+        let explosionSounds = [];
 
+        // Audio context for sound effects
+        let audioContext;
+        
         function init() {
-            document.getElementById('loadStatus').textContent = 'Initialisiere...';
+            document.getElementById('loadStatus').textContent = 'Initialisiere Explosions-System...';
 
             // Scene setup
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            // Renderer
+            // Renderer with shadows
             renderer = new THREE.WebGLRenderer({ 
                 canvas: document.getElementById('canvas'),
                 antialias: true 
             });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setClearColor(0x000022);
+            renderer.setClearColor(0x000011);
             renderer.xr.enabled = true;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            // Initialize audio
+            initAudio();
 
             // Check VR support
             if ('xr' in navigator) {
@@ -108,9 +153,6 @@
                     vrSupported = supported;
                     document.getElementById('vrStatus').textContent = supported ? 'Verfügbar ✅' : 'Nicht verfügbar ❌';
                     if (supported) {
-                        document.getElementById('vrButton').style.display = 'inline-block';
-                        
-                        // Add VR button to body
                         const vrBtn = VRButton.createButton(renderer);
                         vrBtn.style.position = 'fixed';
                         vrBtn.style.bottom = '20px';
@@ -118,78 +160,148 @@
                         document.body.appendChild(vrBtn);
                     }
                 }).catch(() => {
-                    document.getElementById('vrStatus').textContent = 'Fehler beim Prüfen ❌';
+                    document.getElementById('vrStatus').textContent = 'Fehler ❌';
                 });
             } else {
                 document.getElementById('vrStatus').textContent = 'Nicht unterstützt ❌';
             }
 
-            // VR session events
-            renderer.xr.addEventListener('sessionstart', () => {
-                document.getElementById('loadStatus').textContent = 'VR Session gestartet!';
-                console.log('VR session started');
-            });
-
-            renderer.xr.addEventListener('sessionend', () => {
-                document.getElementById('loadStatus').textContent = 'VR Session beendet';
-                console.log('VR session ended');
-            });
-
-            // Raycaster for interaction
-            raycaster = new THREE.Raycaster();
-            mouse = new THREE.Vector2();
-
-            // Lighting
-            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            // Lighting system
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
             scene.add(ambientLight);
 
-            const sunLight = new THREE.PointLight(0xFFD700, 2, 100);
+            const sunLight = new THREE.PointLight(0xFFD700, 3, 100);
             sunLight.position.set(0, 0, 0);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
             scene.add(sunLight);
 
-            // Create sun
-            const sunGeometry = new THREE.SphereGeometry(1, 32, 32);
-            const sunMaterial = new THREE.MeshBasicMaterial({ 
-                color: 0xFFD700,
-                emissive: 0xFF4400
-            });
-            sun = new THREE.Mesh(sunGeometry, sunMaterial);
-            scene.add(sun);
+            // Create animated starfield
+            createStarfield();
+
+            // Create sun with corona effect
+            createSun();
 
             // Create planets
             createPlanets();
 
-            // Add visual debug sphere
-            const debugGeometry = new THREE.SphereGeometry(0.1, 8, 8);
-            const debugMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
-            const debugSphere = new THREE.Mesh(debugGeometry, debugMaterial);
-            debugSphere.position.set(2, 2, 2);
-            scene.add(debugSphere);
-
             // Camera position
-            camera.position.set(0, 5, 15);
+            camera.position.set(0, 8, 20);
             camera.lookAt(0, 0, 0);
 
             // Controls
             setupControls();
+            setupVRControllers();
+
+            // Collision detection
+            setInterval(checkCollisions, 100);
 
             // Start animation
             renderer.setAnimationLoop(animate);
 
-            document.getElementById('loadStatus').textContent = 'Fertig! ✅';
+            document.getElementById('loadStatus').textContent = 'Bereit für Explosionen! 💥';
+        }
+
+        function initAudio() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            } catch(e) {
+                console.log('Audio not supported');
+            }
+        }
+
+        function createStarfield() {
+            const starGeometry = new THREE.BufferGeometry();
+            const starCount = 10000;
+            const positions = new Float32Array(starCount * 3);
+            
+            for (let i = 0; i < starCount * 3; i += 3) {
+                const radius = 200;
+                const phi = Math.random() * Math.PI * 2;
+                const costheta = Math.random() * 2 - 1;
+                const theta = Math.acos(costheta);
+                
+                positions[i] = radius * Math.sin(theta) * Math.cos(phi);
+                positions[i + 1] = radius * Math.sin(theta) * Math.sin(phi);
+                positions[i + 2] = radius * Math.cos(theta);
+            }
+            
+            starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const starMaterial = new THREE.PointsMaterial({
+                color: 0xFFFFFF,
+                size: 0.1,
+                transparent: true,
+                blending: THREE.AdditiveBlending
+            });
+            
+            const stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+        }
+
+        function createSun() {
+            const sunGeometry = new THREE.SphereGeometry(1.5, 32, 32);
+            const sunMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 1.0 }
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+                    void main() {
+                        vUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform float time;
+                    varying vec2 vUv;
+                    void main() {
+                        vec2 center = vec2(0.5, 0.5);
+                        float dist = distance(vUv, center);
+                        float pulse = sin(time * 2.0) * 0.1 + 0.9;
+                        vec3 color = mix(vec3(1.0, 0.6, 0.0), vec3(1.0, 1.0, 0.0), pulse);
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `
+            });
+            
+            sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            scene.add(sun);
+            
+            // Corona effect
+            const coronaGeometry = new THREE.SphereGeometry(2.5, 32, 32);
+            const coronaMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFF6600,
+                transparent: true,
+                opacity: 0.1,
+                blending: THREE.AdditiveBlending
+            });
+            const corona = new THREE.Mesh(coronaGeometry, coronaMaterial);
+            scene.add(corona);
         }
 
         function createPlanets() {
             const planetData = [
-                { name: 'Earth', radius: 0.3, distance: 4, color: 0x4F94CD, speed: 0.02 },
-                { name: 'Mars', radius: 0.25, distance: 6, color: 0xCD5C5C, speed: 0.015 },
-                { name: 'Jupiter', radius: 0.6, distance: 9, color: 0xD2691E, speed: 0.01 }
+                { name: 'Mercury', radius: 0.15, distance: 3, color: 0x8C7853, speed: 0.04, moons: 0 },
+                { name: 'Venus', radius: 0.18, distance: 4, color: 0xFFC649, speed: 0.03, moons: 0 },
+                { name: 'Earth', radius: 0.25, distance: 6, color: 0x4F94CD, speed: 0.02, moons: 1 },
+                { name: 'Mars', radius: 0.2, distance: 8, color: 0xCD5C5C, speed: 0.015, moons: 2 },
+                { name: 'Jupiter', radius: 0.8, distance: 12, color: 0xD2691E, speed: 0.01, moons: 4 },
+                { name: 'Saturn', radius: 0.7, distance: 16, color: 0xFAD5A5, speed: 0.008, moons: 3, rings: true },
+                { name: 'Uranus', radius: 0.4, distance: 20, color: 0x4FD0E3, speed: 0.006, moons: 1 },
+                { name: 'Neptune', radius: 0.39, distance: 24, color: 0x4169E1, speed: 0.005, moons: 1 }
             ];
 
             planetData.forEach((data, index) => {
                 const geometry = new THREE.SphereGeometry(data.radius, 32, 32);
-                const material = new THREE.MeshLambertMaterial({ color: data.color });
+                const material = new THREE.MeshLambertMaterial({ 
+                    color: data.color,
+                    transparent: true
+                });
                 const planet = new THREE.Mesh(geometry, material);
+                planet.castShadow = true;
+                planet.receiveShadow = true;
 
                 // Planet properties
                 planet.userData = {
@@ -197,47 +309,76 @@
                     originalDistance: data.distance,
                     currentDistance: data.distance,
                     speed: data.speed,
-                    angle: index * Math.PI / 3, // Spread them out
-                    isGrabbed: false
+                    angle: index * Math.PI / 4,
+                    isGrabbed: false,
+                    health: 100,
+                    originalRadius: data.radius
                 };
 
                 // Initial position
                 planet.position.x = Math.cos(planet.userData.angle) * data.distance;
                 planet.position.z = Math.sin(planet.userData.angle) * data.distance;
-                planet.position.y = 0;
+                planet.position.y = (Math.random() - 0.5) * 0.5;
 
                 scene.add(planet);
                 planets.push(planet);
+
+                // Add rings for Saturn
+                if (data.rings) {
+                    const ringGeometry = new THREE.RingGeometry(data.radius * 1.5, data.radius * 2.5, 64);
+                    const ringMaterial = new THREE.MeshBasicMaterial({
+                        color: 0xD4AF37,
+                        transparent: true,
+                        opacity: 0.6,
+                        side: THREE.DoubleSide
+                    });
+                    const rings = new THREE.Mesh(ringGeometry, ringMaterial);
+                    rings.rotation.x = Math.PI / 2;
+                    planet.add(rings);
+                }
+
+                // Add moons
+                for (let m = 0; m < data.moons; m++) {
+                    createMoon(planet, m);
+                }
             });
         }
 
+        function createMoon(planet, index) {
+            const moonGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+            const moonMaterial = new THREE.MeshLambertMaterial({ color: 0xC0C0C0 });
+            const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+            
+            const distance = planet.userData.originalRadius + 0.3 + (index * 0.2);
+            const angle = (index / planet.userData.moons) * Math.PI * 2;
+            
+            moon.position.x = Math.cos(angle) * distance;
+            moon.position.z = Math.sin(angle) * distance;
+            
+            moon.userData = {
+                orbitRadius: distance,
+                orbitAngle: angle,
+                orbitSpeed: 0.05 + (index * 0.02)
+            };
+            
+            planet.add(moon);
+        }
+
         function setupControls() {
-            // Mouse controls (desktop)
+            // Mouse controls
             document.addEventListener('mousedown', onMouseDown);
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
-            
-            // Touch controls for mobile
-            document.addEventListener('touchstart', onTouchStart);
-            document.addEventListener('touchmove', onTouchMove);
-            document.addEventListener('touchend', onTouchEnd);
-
-            // VR Controller setup
-            setupVRControllers();
-
-            // Window resize
             window.addEventListener('resize', onWindowResize);
         }
 
         function setupVRControllers() {
-            // Get both controllers
             const controller1 = renderer.xr.getController(0);
             const controller2 = renderer.xr.getController(1);
 
-            // Add event listeners
             controller1.addEventListener('selectstart', onControllerSelect);
             controller1.addEventListener('selectend', onControllerRelease);
-            controller1.addEventListener('squeezestart', onControllerSelect); // Alternative input
+            controller1.addEventListener('squeezestart', onControllerSelect);
             controller1.addEventListener('squeezeend', onControllerRelease);
             
             controller2.addEventListener('selectstart', onControllerSelect);
@@ -245,112 +386,567 @@
             controller2.addEventListener('squeezestart', onControllerSelect);
             controller2.addEventListener('squeezeend', onControllerRelease);
 
-            // Add controllers to scene
             scene.add(controller1);
             scene.add(controller2);
 
-            // Create visible ray lines
+            // Create laser beams
             const rayGeometry = new THREE.BufferGeometry().setFromPoints([
                 new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(0, 0, -5)
+                new THREE.Vector3(0, 0, -10)
             ]);
             
             const ray1 = new THREE.Line(rayGeometry, new THREE.LineBasicMaterial({ 
                 color: 0xff0000, 
-                linewidth: 3 
+                linewidth: 3,
+                transparent: true,
+                opacity: 0.8
             }));
             const ray2 = new THREE.Line(rayGeometry, new THREE.LineBasicMaterial({ 
                 color: 0x0000ff, 
-                linewidth: 3 
+                linewidth: 3,
+                transparent: true,
+                opacity: 0.8
             }));
             
             controller1.add(ray1);
             controller2.add(ray2);
 
-            // Store controllers globally
-            window.controller1 = controller1;
-            window.controller2 = controller2;
+            // Add particle effects to controllers
+            createControllerEffects(controller1);
+            createControllerEffects(controller2);
+        }
 
-            console.log('VR Controllers setup complete');
-            document.getElementById('loadStatus').textContent = 'Controller bereit - Trigger drücken!';
-
-            // Auto-detect in VR mode
-            renderer.xr.addEventListener('sessionstart', () => {
-                setTimeout(() => {
-                    document.getElementById('loadStatus').textContent = 'VR Aktiv - Rote/Blaue Linien von Controller?';
-                }, 1000);
+        function createControllerEffects(controller) {
+            const particleGeometry = new THREE.BufferGeometry();
+            const particleCount = 50;
+            const positions = new Float32Array(particleCount * 3);
+            
+            for (let i = 0; i < particleCount * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 0.1;
+                positions[i + 1] = (Math.random() - 0.5) * 0.1;
+                positions[i + 2] = (Math.random() - 0.5) * 0.1;
+            }
+            
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const particleMaterial = new THREE.PointsMaterial({
+                color: 0x00ff00,
+                size: 0.02,
+                transparent: true,
+                blending: THREE.AdditiveBlending
             });
+            
+            const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+            controller.add(particleSystem);
         }
 
         function onControllerSelect(event) {
             const controller = event.target;
             const raycaster = new THREE.Raycaster();
             
-            // Set raycaster from controller position and direction
-            raycaster.set(controller.position, controller.getWorldDirection(new THREE.Vector3()));
+            const tempMatrix = new THREE.Matrix4();
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
             
-            const intersects = raycaster.intersectObjects(planets);
-            console.log('VR Controller select - intersects:', intersects.length);
+            const allObjects = [...planets, ...asteroids];
+            const intersects = raycaster.intersectObjects(allObjects);
             
             if (intersects.length > 0) {
-                selectedPlanet = intersects[0].object;
-                selectedPlanet.userData.isGrabbed = true;
-                selectedPlanet.material.emissive.setHex(0x444444);
-                document.getElementById('loadStatus').textContent = 'VR Grab: ' + selectedPlanet.userData.name;
-                console.log('VR Grabbed:', selectedPlanet.userData.name);
-            } else {
-                document.getElementById('loadStatus').textContent = 'VR: Kein Planet getroffen';
+                const object = intersects[0].object;
+                
+                if (planets.includes(object)) {
+                    selectedPlanet = object;
+                    selectedPlanet.userData.isGrabbed = true;
+                    selectedPlanet.userData.grabbingController = controller;
+                    selectedPlanet.material.emissive.setHex(0x444444);
+                    
+                    selectedPlanet.userData.grabOffset = new THREE.Vector3();
+                    selectedPlanet.userData.grabOffset.copy(selectedPlanet.position);
+                    selectedPlanet.userData.grabOffset.sub(controller.position);
+                    
+                    document.getElementById('loadStatus').textContent = '🚀 Grabbed: ' + selectedPlanet.userData.name;
+                    createGrabEffect(selectedPlanet.position);
+                } else if (asteroids.includes(object)) {
+                    // Destroy asteroid
+                    destroyAsteroid(object);
+                    updateScore(50);
+                }
             }
         }
 
         function onControllerRelease(event) {
-            if (selectedPlanet) {
+            if (selectedPlanet && selectedPlanet.userData.grabbingController === event.target) {
                 const distance = selectedPlanet.position.distanceTo(new THREE.Vector3(0, 0, 0));
-                selectedPlanet.userData.currentDistance = Math.max(distance, 1.5);
+                selectedPlanet.userData.currentDistance = Math.max(distance, 2.0);
                 selectedPlanet.userData.angle = Math.atan2(selectedPlanet.position.z, selectedPlanet.position.x);
                 selectedPlanet.userData.isGrabbed = false;
+                selectedPlanet.userData.grabbingController = null;
                 selectedPlanet.material.emissive.setHex(0x000000);
                 
-                document.getElementById('loadStatus').textContent = 'VR Release: ' + selectedPlanet.userData.name;
-                console.log('VR Released:', selectedPlanet.userData.name);
+                document.getElementById('loadStatus').textContent = '🌍 Released: ' + selectedPlanet.userData.name;
                 selectedPlanet = null;
             }
         }
 
+        function checkCollisions() {
+            // Planet-Planet collisions
+            for (let i = 0; i < planets.length; i++) {
+                for (let j = i + 1; j < planets.length; j++) {
+                    const planet1 = planets[i];
+                    const planet2 = planets[j];
+                    const distance = planet1.position.distanceTo(planet2.position);
+                    const minDistance = planet1.geometry.parameters.radius + planet2.geometry.parameters.radius;
+                    
+                    if (distance < minDistance * 1.2) {
+                        planetCollision(planet1, planet2);
+                    }
+                }
+            }
+
+            // Planet-Black Hole interactions
+            blackHoles.forEach(blackHole => {
+                planets.forEach(planet => {
+                    const distance = planet.position.distanceTo(blackHole.position);
+                    if (distance < 2.0) {
+                        // Pull planet towards black hole
+                        const direction = new THREE.Vector3();
+                        direction.subVectors(blackHole.position, planet.position);
+                        direction.normalize();
+                        direction.multiplyScalar(0.02);
+                        planet.position.add(direction);
+                        
+                        if (distance < 1.0) {
+                            // Planet consumed by black hole
+                            createBlackHoleConsumption(planet, blackHole);
+                        }
+                    }
+                });
+            });
+        }
+
+        function planetCollision(planet1, planet2) {
+            const midPoint = new THREE.Vector3();
+            midPoint.addVectors(planet1.position, planet2.position);
+            midPoint.multiplyScalar(0.5);
+            
+            createExplosion(midPoint, Math.max(planet1.geometry.parameters.radius, planet2.geometry.parameters.radius) * 5);
+            updateScore(200);
+            
+            // Damage planets
+            planet1.userData.health -= 50;
+            planet2.userData.health -= 50;
+            
+            // Visual damage
+            planet1.material.emissive.setHex(0xff4400);
+            planet2.material.emissive.setHex(0xff4400);
+            
+            setTimeout(() => {
+                if (planet1.material) planet1.material.emissive.setHex(0x000000);
+                if (planet2.material) planet2.material.emissive.setHex(0x000000);
+            }, 1000);
+            
+            document.getElementById('loadStatus').textContent = '💥 COLLISION! ' + planet1.userData.name + ' vs ' + planet2.userData.name;
+        }
+
+        function createExplosion(position, size) {
+            const explosionGroup = new THREE.Group();
+            
+            // Core explosion
+            const coreGeometry = new THREE.SphereGeometry(0.1, 16, 16);
+            const coreMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFFFFFF,
+                transparent: true,
+                opacity: 1
+            });
+            const core = new THREE.Mesh(coreGeometry, coreMaterial);
+            core.position.copy(position);
+            explosionGroup.add(core);
+            
+            // Explosion particles
+            const particleCount = 200;
+            const explosionGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const velocities = [];
+            
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                positions[i3] = position.x + (Math.random() - 0.5) * 0.2;
+                positions[i3 + 1] = position.y + (Math.random() - 0.5) * 0.2;
+                positions[i3 + 2] = position.z + (Math.random() - 0.5) * 0.2;
+                
+                velocities.push({
+                    x: (Math.random() - 0.5) * size * 0.1,
+                    y: (Math.random() - 0.5) * size * 0.1,
+                    z: (Math.random() - 0.5) * size * 0.1
+                });
+            }
+            
+            explosionGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const explosionMaterial = new THREE.PointsMaterial({
+                color: 0xFF6600,
+                size: 0.1,
+                transparent: true,
+                blending: THREE.AdditiveBlending
+            });
+            
+            const explosion = new THREE.Points(explosionGeometry, explosionMaterial);
+            explosionGroup.add(explosion);
+            scene.add(explosionGroup);
+            
+            // Animate explosion
+            let time = 0;
+            const animate = () => {
+                time += 0.02;
+                
+                const positions = explosion.geometry.attributes.position.array;
+                for (let i = 0; i < particleCount; i++) {
+                    const i3 = i * 3;
+                    positions[i3] += velocities[i].x;
+                    positions[i3 + 1] += velocities[i].y;
+                    positions[i3 + 2] += velocities[i].z;
+                    
+                    // Gravity effect
+                    velocities[i].y -= 0.001;
+                }
+                explosion.geometry.attributes.position.needsUpdate = true;
+                
+                // Fade out
+                explosion.material.opacity = Math.max(0, 1 - time * 0.5);
+                core.scale.setScalar(1 + time * 10);
+                core.material.opacity = Math.max(0, 1 - time * 2);
+                
+                if (time < 4) {
+                    requestAnimationFrame(animate);
+                } else {
+                    scene.remove(explosionGroup);
+                }
+            };
+            animate();
+            
+            // Screen shake effect
+            camera.position.add(new THREE.Vector3(
+                (Math.random() - 0.5) * 0.2,
+                (Math.random() - 0.5) * 0.2,
+                (Math.random() - 0.5) * 0.2
+            ));
+        }
+
+        function createGrabEffect(position) {
+            const ringGeometry = new THREE.RingGeometry(0.5, 0.7, 16);
+            const ringMaterial = new THREE.MeshBasicMaterial({
+                color: 0x00FF00,
+                transparent: true,
+                opacity: 0.8
+            });
+            const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+            ring.position.copy(position);
+            ring.lookAt(camera.position);
+            scene.add(ring);
+            
+            // Animate ring
+            let scale = 1;
+            const animate = () => {
+                scale += 0.1;
+                ring.scale.setScalar(scale);
+                ring.material.opacity *= 0.95;
+                
+                if (ring.material.opacity > 0.01) {
+                    requestAnimationFrame(animate);
+                } else {
+                    scene.remove(ring);
+                }
+            };
+            animate();
+        }
+
+        function animate() {
+            const time = Date.now() * 0.001;
+            
+            // Update sun shader
+            if (sun.material.uniforms) {
+                sun.material.uniforms.time.value = time;
+            }
+            
+            // Update planets
+            planets.forEach(planet => {
+                if (!planet.userData.isGrabbed) {
+                    planet.userData.angle += planet.userData.speed * timeScale;
+                    planet.position.x = Math.cos(planet.userData.angle) * planet.userData.currentDistance;
+                    planet.position.z = Math.sin(planet.userData.angle) * planet.userData.currentDistance;
+                } else if (planet.userData.grabbingController) {
+                    planet.position.copy(planet.userData.grabbingController.position);
+                    planet.position.add(planet.userData.grabOffset);
+                }
+                
+                // Update moons
+                planet.children.forEach(child => {
+                    if (child.userData.orbitRadius) {
+                        child.userData.orbitAngle += child.userData.orbitSpeed * timeScale;
+                        child.position.x = Math.cos(child.userData.orbitAngle) * child.userData.orbitRadius;
+                        child.position.z = Math.sin(child.userData.orbitAngle) * child.userData.orbitRadius;
+                    }
+                });
+            });
+            
+            // Update asteroids
+            asteroids.forEach(asteroid => {
+                asteroid.rotation.x += 0.01;
+                asteroid.rotation.y += 0.02;
+            });
+            
+            // Update black holes
+            blackHoles.forEach(blackHole => {
+                blackHole.rotation.z += 0.05;
+                // Accretion disk animation
+                blackHole.children.forEach(child => {
+                    child.rotation.z += 0.02;
+                });
+            });
+            
+            renderer.render(scene, camera);
+        }
+
+        // UI Functions
+        window.resetSystem = function() {
+            // Reset planets
+            planets.forEach(planet => {
+                planet.userData.currentDistance = planet.userData.originalDistance;
+                planet.userData.angle = Math.random() * Math.PI * 2;
+                planet.userData.isGrabbed = false;
+                planet.userData.health = 100;
+                planet.material.emissive.setHex(0x000000);
+            });
+            
+            // Clear effects
+            blackHoles.forEach(bh => scene.remove(bh));
+            asteroids.forEach(ast => scene.remove(ast));
+            blackHoles = [];
+            asteroids = [];
+            
+            selectedPlanet = null;
+            score = 0;
+            updateScore(0);
+            document.getElementById('loadStatus').textContent = 'System Reset! 🔄';
+        };
+
+        window.addBlackHole = function() {
+            const blackHoleGeometry = new THREE.SphereGeometry(0.8, 32, 32);
+            const blackHoleMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const blackHole = new THREE.Mesh(blackHoleGeometry, blackHoleMaterial);
+            
+            // Random position
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 15 + Math.random() * 10;
+            blackHole.position.x = Math.cos(angle) * radius;
+            blackHole.position.z = Math.sin(angle) * radius;
+            blackHole.position.y = (Math.random() - 0.5) * 3;
+            
+            // Event horizon effect
+            const horizonGeometry = new THREE.SphereGeometry(1.2, 32, 32);
+            const horizonMaterial = new THREE.MeshBasicMaterial({
+                color: 0x440044,
+                transparent: true,
+                opacity: 0.3
+            });
+            const horizon = new THREE.Mesh(horizonGeometry, horizonMaterial);
+            blackHole.add(horizon);
+            
+            // Accretion disk
+            const diskGeometry = new THREE.RingGeometry(1.5, 3.0, 32);
+            const diskMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFF6600,
+                transparent: true,
+                opacity: 0.6,
+                side: THREE.DoubleSide
+            });
+            const disk = new THREE.Mesh(diskGeometry, diskMaterial);
+            disk.rotation.x = Math.PI / 2;
+            blackHole.add(disk);
+            
+            scene.add(blackHole);
+            blackHoles.push(blackHole);
+            
+            createExplosion(blackHole.position, 3);
+            updateScore(-100); // Cost to create black hole
+            document.getElementById('loadStatus').textContent = '🕳️ Schwarzes Loch erschaffen!';
+        };
+
+        window.addAsteroidField = function() {
+            for (let i = 0; i < 30; i++) {
+                const size = 0.05 + Math.random() * 0.15;
+                const asteroidGeometry = new THREE.DodecahedronGeometry(size);
+                const asteroidMaterial = new THREE.MeshLambertMaterial({
+                    color: new THREE.Color().setHSL(0.1, 0.3, 0.3 + Math.random() * 0.3)
+                });
+                const asteroid = new THREE.Mesh(asteroidGeometry, asteroidMaterial);
+                
+                // Random position in asteroid belt
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 7 + Math.random() * 6;
+                asteroid.position.x = Math.cos(angle) * radius;
+                asteroid.position.z = Math.sin(angle) * radius;
+                asteroid.position.y = (Math.random() - 0.5) * 4;
+                
+                // Random rotation
+                asteroid.userData = {
+                    rotationSpeed: {
+                        x: (Math.random() - 0.5) * 0.02,
+                        y: (Math.random() - 0.5) * 0.02,
+                        z: (Math.random() - 0.5) * 0.02
+                    }
+                };
+                
+                scene.add(asteroid);
+                asteroids.push(asteroid);
+            }
+            
+            document.getElementById('loadStatus').textContent = '☄️ Asteroiden-Feld erschaffen!';
+            updateScore(-50);
+        };
+
+        window.createSuperNova = function() {
+            // Massive explosion at sun position
+            createExplosion(sun.position, 20);
+            
+            // Create shockwave
+            const shockwaveGeometry = new THREE.SphereGeometry(1, 32, 32);
+            const shockwaveMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFFFFFF,
+                transparent: true,
+                opacity: 0.1,
+                wireframe: true
+            });
+            const shockwave = new THREE.Mesh(shockwaveGeometry, shockwaveMaterial);
+            shockwave.position.copy(sun.position);
+            scene.add(shockwave);
+            
+            // Animate shockwave
+            let scale = 1;
+            const animateShockwave = () => {
+                scale += 0.5;
+                shockwave.scale.setScalar(scale);
+                shockwave.material.opacity *= 0.98;
+                
+                // Push planets away
+                planets.forEach(planet => {
+                    const distance = planet.position.distanceTo(sun.position);
+                    if (distance < scale) {
+                        const direction = new THREE.Vector3();
+                        direction.subVectors(planet.position, sun.position);
+                        direction.normalize();
+                        direction.multiplyScalar(0.1);
+                        planet.position.add(direction);
+                    }
+                });
+                
+                if (scale < 50 && shockwave.material.opacity > 0.01) {
+                    requestAnimationFrame(animateShockwave);
+                } else {
+                    scene.remove(shockwave);
+                }
+            };
+            animateShockwave();
+            
+            updateScore(500);
+            document.getElementById('loadStatus').textContent = '💥 SUPERNOVA! Planeten weggeschleudert!';
+        };
+
+        window.toggleTimeScale = function() {
+            timeScale = timeScale === 1.0 ? 0.3 : 1.0;
+            document.getElementById('loadStatus').textContent = timeScale === 1.0 ? '⏰ Normale Zeit' : '⏰ Zeitlupe aktiviert!';
+        };
+
+        function destroyAsteroid(asteroid) {
+            const index = asteroids.indexOf(asteroid);
+            if (index > -1) {
+                asteroids.splice(index, 1);
+                scene.remove(asteroid);
+                createExplosion(asteroid.position, 2);
+                document.getElementById('loadStatus').textContent = '☄️ Asteroid zerstört!';
+            }
+        }
+
+        function createBlackHoleConsumption(planet, blackHole) {
+            // Create consumption effect
+            const consumptionGeometry = new THREE.RingGeometry(0.1, 1.5, 32);
+            const consumptionMaterial = new THREE.MeshBasicMaterial({
+                color: 0x8800FF,
+                transparent: true,
+                opacity: 0.8
+            });
+            const consumption = new THREE.Mesh(consumptionGeometry, consumptionMaterial);
+            consumption.position.copy(blackHole.position);
+            consumption.lookAt(camera.position);
+            scene.add(consumption);
+            
+            // Animate consumption
+            let scale = 5;
+            const animate = () => {
+                scale *= 0.9;
+                consumption.scale.setScalar(scale);
+                consumption.rotation.z += 0.2;
+                
+                if (scale > 0.1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    scene.remove(consumption);
+                }
+            };
+            animate();
+            
+            // Remove planet
+            const index = planets.indexOf(planet);
+            if (index > -1) {
+                planets.splice(index, 1);
+                scene.remove(planet);
+                updateScore(300);
+                document.getElementById('loadStatus').textContent = '🌍 ' + planet.userData.name + ' vom Schwarzen Loch verschlungen!';
+            }
+        }
+
+        function updateScore(points) {
+            score = Math.max(0, score + points);
+            document.getElementById('score').textContent = score;
+        }
+
         function onMouseDown(event) {
             event.preventDefault();
-            
+            const mouse = new THREE.Vector2();
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
+            const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(planets);
-
-            console.log('Mouse click at:', mouse.x, mouse.y);
-            console.log('Intersects found:', intersects.length);
+            const allObjects = [...planets, ...asteroids];
+            const intersects = raycaster.intersectObjects(allObjects);
 
             if (intersects.length > 0) {
-                selectedPlanet = intersects[0].object;
-                selectedPlanet.userData.isGrabbed = true;
-                selectedPlanet.material.emissive.setHex(0x444444);
-                console.log('Grabbed:', selectedPlanet.userData.name);
+                const object = intersects[0].object;
                 
-                // Visual feedback
-                document.getElementById('loadStatus').textContent = 'Planet gefasst: ' + selectedPlanet.userData.name;
-            } else {
-                console.log('No planet hit');
-                document.getElementById('loadStatus').textContent = 'Kein Planet getroffen';
+                if (planets.includes(object)) {
+                    selectedPlanet = object;
+                    selectedPlanet.userData.isGrabbed = true;
+                    selectedPlanet.material.emissive.setHex(0x444444);
+                    createGrabEffect(selectedPlanet.position);
+                    document.getElementById('loadStatus').textContent = '🖱️ Grabbed: ' + selectedPlanet.userData.name;
+                } else if (asteroids.includes(object)) {
+                    destroyAsteroid(object);
+                    updateScore(50);
+                }
             }
         }
 
         function onMouseMove(event) {
             if (selectedPlanet) {
+                const mouse = new THREE.Vector2();
                 mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
                 mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
+                const raycaster = new THREE.Raycaster();
                 raycaster.setFromCamera(mouse, camera);
                 
-                // Project mouse to 3D space
                 const vector = new THREE.Vector3(mouse.x, mouse.y, 0.5);
                 vector.unproject(camera);
                 const dir = vector.sub(camera.position).normalize();
@@ -363,48 +959,15 @@
 
         function onMouseUp(event) {
             if (selectedPlanet) {
-                // Calculate new orbit
                 const distance = selectedPlanet.position.distanceTo(new THREE.Vector3(0, 0, 0));
-                selectedPlanet.userData.currentDistance = Math.max(distance, 1.5); // Don't crash into sun
+                selectedPlanet.userData.currentDistance = Math.max(distance, 2.0);
                 selectedPlanet.userData.angle = Math.atan2(selectedPlanet.position.z, selectedPlanet.position.x);
                 selectedPlanet.userData.isGrabbed = false;
                 selectedPlanet.material.emissive.setHex(0x000000);
                 
-                console.log('Released:', selectedPlanet.userData.name, 'New distance:', distance);
+                document.getElementById('loadStatus').textContent = '🖱️ Released: ' + selectedPlanet.userData.name;
                 selectedPlanet = null;
             }
-        }
-
-        // Touch events (same logic as mouse)
-        function onTouchStart(event) {
-            if (event.touches.length === 1) {
-                const touch = event.touches[0];
-                onMouseDown({ clientX: touch.clientX, clientY: touch.clientY });
-            }
-        }
-
-        function onTouchMove(event) {
-            if (event.touches.length === 1) {
-                const touch = event.touches[0];
-                onMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
-            }
-        }
-
-        function onTouchEnd(event) {
-            onMouseUp({});
-        }
-
-        function animate() {
-            // Update planet orbits
-            planets.forEach(planet => {
-                if (!planet.userData.isGrabbed) {
-                    planet.userData.angle += planet.userData.speed * 0.5;
-                    planet.position.x = Math.cos(planet.userData.angle) * planet.userData.currentDistance;
-                    planet.position.z = Math.sin(planet.userData.angle) * planet.userData.currentDistance;
-                }
-            });
-
-            renderer.render(scene, camera);
         }
 
         function onWindowResize() {
@@ -413,29 +976,18 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Global functions for UI
-        window.resetPlanets = function() {
-            planets.forEach(planet => {
-                planet.userData.currentDistance = planet.userData.originalDistance;
-                planet.userData.angle = Math.random() * Math.PI * 2;
-                planet.userData.isGrabbed = false;
-                planet.material.emissive.setHex(0x000000);
-            });
-            selectedPlanet = null;
-            console.log('Planets reset');
-        };
+        // VR session events
+        renderer.xr.addEventListener('sessionstart', () => {
+            document.getElementById('loadStatus').textContent = '🥽 VR Session aktiv - Bereit für Chaos!';
+        });
 
-        window.enterVR = function() {
-            if (vrSupported) {
-                renderer.xr.getSession();
-            } else {
-                alert('VR nicht verfügbar');
-            }
-        };
+        renderer.xr.addEventListener('sessionend', () => {
+            document.getElementById('loadStatus').textContent = '🥽 VR Session beendet';
+        });
 
-        // Start everything
+        // Initialize everything
         init();
-        console.log('VR Planet System loaded');
+        console.log('🚀 VR Planeten Explosions-Spiel geladen!');
     </script>
 </body>
 </html>
