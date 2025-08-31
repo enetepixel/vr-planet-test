@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>VR Planet Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { 
+            margin: 0; 
+            font-family: Arial, sans-serif; 
+            background: #000;
+            overflow: hidden;
+        }
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        #ui { 
+            position: absolute; 
+            top: 10px; 
+            left: 10px; 
+            color: white; 
+            z-index: 100; 
+            background: rgba(0,0,0,0.8); 
+            padding: 15px; 
+            border-radius: 5px; 
+            max-width: 300px;
+        }
+        button { 
+            margin: 5px; 
+            padding: 10px 15px; 
+            background: #4CAF50; 
+            color: white; 
+            border: none; 
+            border-radius: 3px; 
+            cursor: pointer; 
+            font-size: 14px;
+        }
+        button:hover { 
+            background: #45a049; 
+        }
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 5px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="ui">
+            <h3>🚀 VR Planeten Test</h3>
+            <div class="status">
+                Status: <span id="loadStatus">Lade...</span>
+            </div>
+            <div class="status">
+                WebXR: <span id="vrStatus">Prüfe...</span>
+            </div>
+            <button onclick="resetPlanets()">🔄 Reset</button>
+            <button onclick="enterVR()" id="vrButton" style="display:none;">🥽 VR Starten</button>
+            <div style="margin-top:10px; font-size:11px; color:#ccc;">
+                Desktop: Maus zum Drehen der Kamera<br>
+                VR: Controller zum Greifen
+            </div>
+        </div>
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <script type="module">
+        // Three.js VR Planet System
+        import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
+        import { VRButton } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/webxr/VRButton.js';
+
+        let scene, camera, renderer;
+        let planets = [];
+        let sun;
+        let raycaster, mouse;
+        let selectedPlanet = null;
+        let vrSupported = false;
+
+        function init() {
+            document.getElementById('loadStatus').textContent = 'Initialisiere...';
+
+            // Scene setup
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: document.getElementById('canvas'),
+                antialias: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000022);
+            renderer.xr.enabled = true;
+
+            // Check VR support
+            if ('xr' in navigator) {
+                navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                    vrSupported = supported;
+                    document.getElementById('vrStatus').textContent = supported ? 'Verfügbar ✅' : 'Nicht verfügbar ❌';
+                    if (supported) {
+                        document.getElementById('vrButton').style.display = 'inline-block';
+                        document.body.appendChild(VRButton.createButton(renderer));
+                    }
+                });
+            } else {
+                document.getElementById('vrStatus').textContent = 'Nicht unterstützt ❌';
+            }
+
+            // Raycaster for interaction
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.PointLight(0xFFD700, 2, 100);
+            sunLight.position.set(0, 0, 0);
+            scene.add(sunLight);
+
+            // Create sun
+            const sunGeometry = new THREE.SphereGeometry(1, 32, 32);
+            const sunMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xFFD700,
+                emissive: 0xFF4400
+            });
+            sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            scene.add(sun);
+
+            // Create planets
+            createPlanets();
+
+            // Camera position
+            camera.position.set(0, 5, 15);
+            camera.lookAt(0, 0, 0);
+
+            // Controls
+            setupControls();
+
+            // Start animation
+            renderer.setAnimationLoop(animate);
+
+            document.getElementById('loadStatus').textContent = 'Fertig! ✅';
+        }
+
+        function createPlanets() {
+            const planetData = [
+                { name: 'Earth', radius: 0.3, distance: 4, color: 0x4F94CD, speed: 0.02 },
+                { name: 'Mars', radius: 0.25, distance: 6, color: 0xCD5C5C, speed: 0.015 },
+                { name: 'Jupiter', radius: 0.6, distance: 9, color: 0xD2691E, speed: 0.01 }
+            ];
+
+            planetData.forEach((data, index) => {
+                const geometry = new THREE.SphereGeometry(data.radius, 32, 32);
+                const material = new THREE.MeshLambertMaterial({ color: data.color });
+                const planet = new THREE.Mesh(geometry, material);
+
+                // Planet properties
+                planet.userData = {
+                    name: data.name,
+                    originalDistance: data.distance,
+                    currentDistance: data.distance,
+                    speed: data.speed,
+                    angle: index * Math.PI / 3, // Spread them out
+                    isGrabbed: false
+                };
+
+                // Initial position
+                planet.position.x = Math.cos(planet.userData.angle) * data.distance;
+                planet.position.z = Math.sin(planet.userData.angle) * data.distance;
+                planet.position.y = 0;
+
+                scene.add(planet);
+                planets.push(planet);
+            });
+        }
+
+        function setupControls() {
+            // Mouse controls
+            document.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            
+            // Touch controls for mobile
+            document.addEventListener('touchstart', onTouchStart);
+            document.addEventListener('touchmove', onTouchMove);
+            document.addEventListener('touchend', onTouchEnd);
+
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onMouseDown(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(planets);
+
+            if (intersects.length > 0) {
+                selectedPlanet = intersects[0].object;
+                selectedPlanet.userData.isGrabbed = true;
+                selectedPlanet.material.emissive.setHex(0x444444);
+                console.log('Grabbed:', selectedPlanet.userData.name);
+            }
+        }
+
+        function onMouseMove(event) {
+            if (selectedPlanet) {
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                
+                // Project mouse to 3D space
+                const vector = new THREE.Vector3(mouse.x, mouse.y, 0.5);
+                vector.unproject(camera);
+                const dir = vector.sub(camera.position).normalize();
+                const distance = -camera.position.z / dir.z;
+                const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+                
+                selectedPlanet.position.copy(pos);
+            }
+        }
+
+        function onMouseUp(event) {
+            if (selectedPlanet) {
+                // Calculate new orbit
+                const distance = selectedPlanet.position.distanceTo(new THREE.Vector3(0, 0, 0));
+                selectedPlanet.userData.currentDistance = Math.max(distance, 1.5); // Don't crash into sun
+                selectedPlanet.userData.angle = Math.atan2(selectedPlanet.position.z, selectedPlanet.position.x);
+                selectedPlanet.userData.isGrabbed = false;
+                selectedPlanet.material.emissive.setHex(0x000000);
+                
+                console.log('Released:', selectedPlanet.userData.name, 'New distance:', distance);
+                selectedPlanet = null;
+            }
+        }
+
+        // Touch events (same logic as mouse)
+        function onTouchStart(event) {
+            if (event.touches.length === 1) {
+                const touch = event.touches[0];
+                onMouseDown({ clientX: touch.clientX, clientY: touch.clientY });
+            }
+        }
+
+        function onTouchMove(event) {
+            if (event.touches.length === 1) {
+                const touch = event.touches[0];
+                onMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+            }
+        }
+
+        function onTouchEnd(event) {
+            onMouseUp({});
+        }
+
+        function animate() {
+            // Update planet orbits
+            planets.forEach(planet => {
+                if (!planet.userData.isGrabbed) {
+                    planet.userData.angle += planet.userData.speed * 0.5;
+                    planet.position.x = Math.cos(planet.userData.angle) * planet.userData.currentDistance;
+                    planet.position.z = Math.sin(planet.userData.angle) * planet.userData.currentDistance;
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Global functions for UI
+        window.resetPlanets = function() {
+            planets.forEach(planet => {
+                planet.userData.currentDistance = planet.userData.originalDistance;
+                planet.userData.angle = Math.random() * Math.PI * 2;
+                planet.userData.isGrabbed = false;
+                planet.material.emissive.setHex(0x000000);
+            });
+            selectedPlanet = null;
+            console.log('Planets reset');
+        };
+
+        window.enterVR = function() {
+            if (vrSupported) {
+                renderer.xr.getSession();
+            } else {
+                alert('VR nicht verfügbar');
+            }
+        };
+
+        // Start everything
+        init();
+        console.log('VR Planet System loaded');
+    </script>
+</body>
+</html>
