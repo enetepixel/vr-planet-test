@@ -140,6 +140,13 @@
             // Create planets
             createPlanets();
 
+            // Add visual debug sphere
+            const debugGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const debugMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
+            const debugSphere = new THREE.Mesh(debugGeometry, debugMaterial);
+            debugSphere.position.set(2, 2, 2);
+            scene.add(debugSphere);
+
             // Camera position
             camera.position.set(0, 5, 15);
             camera.lookAt(0, 0, 0);
@@ -186,7 +193,7 @@
         }
 
         function setupControls() {
-            // Mouse controls
+            // Mouse controls (desktop)
             document.addEventListener('mousedown', onMouseDown);
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
@@ -196,22 +203,98 @@
             document.addEventListener('touchmove', onTouchMove);
             document.addEventListener('touchend', onTouchEnd);
 
+            // VR Controller setup
+            setupVRControllers();
+
             // Window resize
             window.addEventListener('resize', onWindowResize);
         }
 
+        function setupVRControllers() {
+            // VR controller setup
+            const controller1 = renderer.xr.getController(0);
+            const controller2 = renderer.xr.getController(1);
+
+            controller1.addEventListener('selectstart', onControllerSelect);
+            controller1.addEventListener('selectend', onControllerRelease);
+            controller2.addEventListener('selectstart', onControllerSelect);
+            controller2.addEventListener('selectend', onControllerRelease);
+
+            scene.add(controller1);
+            scene.add(controller2);
+
+            // Add visual line for controllers
+            const geometry = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(0, 0, -1)
+            ]);
+            const line1 = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xff0000 }));
+            const line2 = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x0000ff }));
+            
+            controller1.add(line1.clone());
+            controller2.add(line2.clone());
+
+            console.log('VR Controllers setup');
+        }
+
+        function onControllerSelect(event) {
+            const controller = event.target;
+            const raycaster = new THREE.Raycaster();
+            
+            // Set raycaster from controller position and direction
+            raycaster.set(controller.position, controller.getWorldDirection(new THREE.Vector3()));
+            
+            const intersects = raycaster.intersectObjects(planets);
+            console.log('VR Controller select - intersects:', intersects.length);
+            
+            if (intersects.length > 0) {
+                selectedPlanet = intersects[0].object;
+                selectedPlanet.userData.isGrabbed = true;
+                selectedPlanet.material.emissive.setHex(0x444444);
+                document.getElementById('loadStatus').textContent = 'VR Grab: ' + selectedPlanet.userData.name;
+                console.log('VR Grabbed:', selectedPlanet.userData.name);
+            } else {
+                document.getElementById('loadStatus').textContent = 'VR: Kein Planet getroffen';
+            }
+        }
+
+        function onControllerRelease(event) {
+            if (selectedPlanet) {
+                const distance = selectedPlanet.position.distanceTo(new THREE.Vector3(0, 0, 0));
+                selectedPlanet.userData.currentDistance = Math.max(distance, 1.5);
+                selectedPlanet.userData.angle = Math.atan2(selectedPlanet.position.z, selectedPlanet.position.x);
+                selectedPlanet.userData.isGrabbed = false;
+                selectedPlanet.material.emissive.setHex(0x000000);
+                
+                document.getElementById('loadStatus').textContent = 'VR Release: ' + selectedPlanet.userData.name;
+                console.log('VR Released:', selectedPlanet.userData.name);
+                selectedPlanet = null;
+            }
+        }
+
         function onMouseDown(event) {
+            event.preventDefault();
+            
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
             raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObjects(planets);
 
+            console.log('Mouse click at:', mouse.x, mouse.y);
+            console.log('Intersects found:', intersects.length);
+
             if (intersects.length > 0) {
                 selectedPlanet = intersects[0].object;
                 selectedPlanet.userData.isGrabbed = true;
                 selectedPlanet.material.emissive.setHex(0x444444);
                 console.log('Grabbed:', selectedPlanet.userData.name);
+                
+                // Visual feedback
+                document.getElementById('loadStatus').textContent = 'Planet gefasst: ' + selectedPlanet.userData.name;
+            } else {
+                console.log('No planet hit');
+                document.getElementById('loadStatus').textContent = 'Kein Planet getroffen';
             }
         }
 
