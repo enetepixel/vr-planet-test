@@ -109,12 +109,31 @@
                     document.getElementById('vrStatus').textContent = supported ? 'Verfügbar ✅' : 'Nicht verfügbar ❌';
                     if (supported) {
                         document.getElementById('vrButton').style.display = 'inline-block';
-                        document.body.appendChild(VRButton.createButton(renderer));
+                        
+                        // Add VR button to body
+                        const vrBtn = VRButton.createButton(renderer);
+                        vrBtn.style.position = 'fixed';
+                        vrBtn.style.bottom = '20px';
+                        vrBtn.style.right = '20px';
+                        document.body.appendChild(vrBtn);
                     }
+                }).catch(() => {
+                    document.getElementById('vrStatus').textContent = 'Fehler beim Prüfen ❌';
                 });
             } else {
                 document.getElementById('vrStatus').textContent = 'Nicht unterstützt ❌';
             }
+
+            // VR session events
+            renderer.xr.addEventListener('sessionstart', () => {
+                document.getElementById('loadStatus').textContent = 'VR Session gestartet!';
+                console.log('VR session started');
+            });
+
+            renderer.xr.addEventListener('sessionend', () => {
+                document.getElementById('loadStatus').textContent = 'VR Session beendet';
+                console.log('VR session ended');
+            });
 
             // Raycaster for interaction
             raycaster = new THREE.Raycaster();
@@ -211,30 +230,56 @@
         }
 
         function setupVRControllers() {
-            // VR controller setup
+            // Get both controllers
             const controller1 = renderer.xr.getController(0);
             const controller2 = renderer.xr.getController(1);
 
+            // Add event listeners
             controller1.addEventListener('selectstart', onControllerSelect);
             controller1.addEventListener('selectend', onControllerRelease);
+            controller1.addEventListener('squeezestart', onControllerSelect); // Alternative input
+            controller1.addEventListener('squeezeend', onControllerRelease);
+            
             controller2.addEventListener('selectstart', onControllerSelect);
             controller2.addEventListener('selectend', onControllerRelease);
+            controller2.addEventListener('squeezestart', onControllerSelect);
+            controller2.addEventListener('squeezeend', onControllerRelease);
 
+            // Add controllers to scene
             scene.add(controller1);
             scene.add(controller2);
 
-            // Add visual line for controllers
-            const geometry = new THREE.BufferGeometry().setFromPoints([
+            // Create visible ray lines
+            const rayGeometry = new THREE.BufferGeometry().setFromPoints([
                 new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(0, 0, -1)
+                new THREE.Vector3(0, 0, -5)
             ]);
-            const line1 = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xff0000 }));
-            const line2 = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x0000ff }));
             
-            controller1.add(line1.clone());
-            controller2.add(line2.clone());
+            const ray1 = new THREE.Line(rayGeometry, new THREE.LineBasicMaterial({ 
+                color: 0xff0000, 
+                linewidth: 3 
+            }));
+            const ray2 = new THREE.Line(rayGeometry, new THREE.LineBasicMaterial({ 
+                color: 0x0000ff, 
+                linewidth: 3 
+            }));
+            
+            controller1.add(ray1);
+            controller2.add(ray2);
 
-            console.log('VR Controllers setup');
+            // Store controllers globally
+            window.controller1 = controller1;
+            window.controller2 = controller2;
+
+            console.log('VR Controllers setup complete');
+            document.getElementById('loadStatus').textContent = 'Controller bereit - Trigger drücken!';
+
+            // Auto-detect in VR mode
+            renderer.xr.addEventListener('sessionstart', () => {
+                setTimeout(() => {
+                    document.getElementById('loadStatus').textContent = 'VR Aktiv - Rote/Blaue Linien von Controller?';
+                }, 1000);
+            });
         }
 
         function onControllerSelect(event) {
